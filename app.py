@@ -1,7 +1,6 @@
 from flask import Flask,redirect,url_for,session,request,jsonify,abort
 from flaskext.mysql import MySQL
 from functools import wraps
-# import mysql.connector
 import base64
 import requests
 import os
@@ -91,18 +90,30 @@ def index():
             headers = {'Authorization': f"{token_type} {access_token}"}
             userinfo_response = requests.get(userinfo_endpoint, headers=headers)
             userinfo = userinfo_response.json()
-            #print(userinfo)
+            #print(userinfo.get('email'))
 
             # Store user information in the database
             db_connection = get_db_connection()
             cursor = db_connection.cursor()
-            cursor.execute("INSERT INTO users (email, access_token, refresh_token) VALUES (%s, %s, %s)", (userinfo['email'], access_token, refresh_token))
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = %s", (userinfo['email'],))
+            exists = cursor.fetchone()[0]
+
+            if exists:
+        # Update existing user's tokens
+                cursor.execute("UPDATE users SET access_token = %s, refresh_token = %s WHERE email = %s",
+                            (access_token, refresh_token, userinfo['email']))
+            else:
+        # Insert new user
+                cursor.execute("INSERT INTO users (email, access_token, refresh_token) VALUES (%s, %s, %s)",
+                            (userinfo['email'], access_token, refresh_token))
+
             db_connection.commit()
             cursor.close()
             db_connection.close()
             
+            session['email'] = userinfo['email']
             session['access_token'] = access_token
-            return redirect(url_for('register'))
+            return redirect(url_for('checkUser'))
         else:
             jsonify({'error': 'Failed to obtain access token'}), 500
             return redirect(url_for('signin'))
@@ -122,26 +133,62 @@ def signin():
 def register():
     access_token = session.get('access_token')
     if access_token:
-        # User is authenticated, you can perform actions here
-        # check if the user is already in database
+
+        #NUCLEO UPDATE , ECT DEFAULT FOR TEST MODE
+        # nucleo = request.form.get('nucleo')
+        # if not nucleo:
+        #     return jsonify({"error": "Nucleo value is required"}), 400
+        nucleo = 'ECT'
         db_connection = get_db_connection()
         cursor = db_connection.cursor()
         cursor.execute("SELECT * FROM users WHERE access_token = %s", (access_token,))
         user = cursor.fetchone()
-        cursor.close()
-        db_connection.close()
-
-        session['email'] = user[1]
-        session['access_token'] = user[2]
         if user:
-            session['type'] = 'login'
-            return 'Welcome to the homepage!' #return the user's email and access token (new?) #type signin
+            session['email'] = user[1]
+            session['access_token'] = user[3]
+            # Update the user with the nucleo value
+            cursor.execute("UPDATE users SET nucleo = %s WHERE access_token = %s", (nucleo, access_token))
+            db_connection.commit()
+            cursor.close()
+            db_connection.close()
+            # Redirect to the check function to handle further logic
+            return redirect(url_for('checkUser'))
         else:
+            cursor.close()
+            db_connection.close()
             session['type'] = 'register'
-            return 'Please register' #type register
+            return jsonify({"message": "User not found"}), 404
     else:
         # User is not authenticated, redirect to login
         return redirect(url_for('signin'))
+
+@app.route('/v1/check')
+@require_api_key
+def checkUser():
+    if session.get('access_token'):
+        db_connection = get_db_connection()
+        cursor = db_connection.cursor()
+        #print(session.get('email'))
+        cursor.execute("SELECT Nucleo FROM users WHERE email = %s", (session.get('email'),))
+        result = cursor.fetchone()
+        cursor.close()
+        db_connection.close()
+
+        if result:
+            nucleo_assigned = result[0]
+            if nucleo_assigned:
+                # If 'nucleo' is assigned, return to the homepage
+                session['type'] = 'login'
+                # return redirect(url_for('homepage')) 
+                return "Welcome to homepage"
+            else:
+                # If 'nucleo' is not assigned, redirect to the register route
+                session['type'] = 'register'
+                return redirect(url_for('register'))
+        else:
+            # If user not found in the database, consider what you'd want to do here
+            return jsonify({"message": "User not found"}), 404
+
 
 if __name__ == '__main__':
     app.run(debug=True)

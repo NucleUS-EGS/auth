@@ -184,7 +184,7 @@ def checkUser():
             else:
                 # If 'nucleo' is not assigned, redirect to the register route
                 session['type'] = 'register'
-                return redirect(url_for('register'))
+                return "User logged in but not authenticated"
         else:
             # If user not found in the database, consider what you'd want to do here
             return jsonify({"message": "User not found"}), 404

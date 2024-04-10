@@ -54,6 +54,9 @@ def require_api_key(func):
     def decorated_function(*args, **kwargs):
         print(request.headers)
         api_key = request.args.get('token')
+        if not api_key or len(api_key) % 4 != 0:
+            abort(401)
+
         #decode the api key
         api_key = api_key.encode('utf-8')
         api_key = base64.b64decode(api_key).decode('utf-8')

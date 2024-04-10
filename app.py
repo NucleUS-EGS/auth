@@ -3,6 +3,7 @@ from flaskext.mysql import MySQL
 from functools import wraps
 import base64
 import requests
+import base64
 import os
 import json
 
@@ -52,7 +53,11 @@ def require_api_key(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
         print(request.headers)
-        api_key = request.headers.get('API_KEY')
+        api_key = request.args.get('token')
+        #decode the api key
+        api_key = api_key.encode('utf-8')
+        api_key = base64.b64decode(api_key).decode('utf-8')
+        print(api_key)
         print(f"API key received: {api_key}")
         if not api_key or not verify_api_key(api_key):
             abort(401)

@@ -1,4 +1,4 @@
-from flask import Flask,redirect,url_for,session,request,jsonify,abort
+from flask import Flask,redirect,url_for,session,request,jsonify,abort, make_response
 from flaskext.mysql import MySQL
 from functools import wraps
 import base64
@@ -11,6 +11,7 @@ app.secret_key = "secret_key"
 IDP_BASE_URL = os.environ.get('IDP_BASE_URL')
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
+FRONTEND_URL = os.environ.get('FRONTEND_BASE_URL')
 REDIRECT_URI = 'http://localhost:5000'  
 SCOPE = 'openid'
 STATE = '1234567890' 
@@ -20,7 +21,7 @@ mysql.init_app(app)
 
 # Database configuration
 app.config['MYSQL_DATABASE_HOST'] = 'localhost'
-app.config['MYSQL_DATABASE_PORT'] = 3307  
+app.config['MYSQL_DATABASE_PORT'] = 3308  
 app.config['MYSQL_DATABASE_USER'] = 'root'
 app.config['MYSQL_DATABASE_PASSWORD'] = 'password' #change this all to environment variables
 app.config['MYSQL_DATABASE_DB'] = 'auth'
@@ -50,7 +51,9 @@ def verify_api_key(api_key):
 def require_api_key(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
+        print(request.headers)
         api_key = request.headers.get('API_KEY')
+        print(f"API key received: {api_key}")
         if not api_key or not verify_api_key(api_key):
             abort(401)
         print(f"API key {api_key} verified successfully.")  
@@ -61,7 +64,6 @@ def require_api_key(func):
 
 # Route without authentication
 @app.route('/') #choose the idp (only UA is available)
-@require_api_key
 def index():
     code = request.args.get('code')
     if code:
@@ -113,7 +115,11 @@ def index():
             
             session['email'] = userinfo['email']
             session['access_token'] = access_token
-            return redirect(url_for('checkUser'))
+
+            resp = make_response(redirect(url_for('checkUser')))
+            resp.set_cookie('AUTH_SERVICE_EMAIL', userinfo['email'])
+            resp.set_cookie('AUTH_SERVICE_ACCESS_TOKEN', access_token)
+            return resp
         else:
             jsonify({'error': 'Failed to obtain access token'}), 500
             return redirect(url_for('signin'))
@@ -121,8 +127,9 @@ def index():
         return redirect(url_for('signin'))
 
 @app.route('/v1/signin') #redirect to the idp
-@require_api_key
+#@require_api_key
 def signin():
+    print(request.headers)
     authorization_url = f"{IDP_BASE_URL}/authorize?response_type=code&client_id={CLIENT_ID}&state={STATE}&scope={SCOPE}&redirect_uri={REDIRECT_URI}"
     #response = requests.get(authorization_url)
     #print(response)
@@ -163,7 +170,6 @@ def register():
         return redirect(url_for('signin'))
 
 @app.route('/v1/check')
-@require_api_key
 def checkUser():
     if session.get('access_token'):
         db_connection = get_db_connection()
@@ -178,13 +184,14 @@ def checkUser():
             nucleo_assigned = result[0]
             if nucleo_assigned:
                 # If 'nucleo' is assigned, return to the homepage
-                session['type'] = 'login'
-                # return redirect(url_for('homepage')) 
-                return "Welcome to homepage"
+                resp = make_response(redirect(f"{FRONTEND_URL}"))
+                resp.set_cookie('AUTH_SERVICE_STEP', 'loggedin')
+                return resp
             else:
-                # If 'nucleo' is not assigned, redirect to the register route
-                session['type'] = 'register'
-                return "User logged in but not authenticated"
+                # If 'nucleo' is not assigned, redirect to frontend registration page
+                resp = make_response(redirect(f"{FRONTEND_URL}/register"))
+                resp.set_cookie('AUTH_SERVICE_STEP', 'register')
+                return resp
         else:
             # If user not found in the database, consider what you'd want to do here
             return jsonify({"message": "User not found"}), 404

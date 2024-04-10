@@ -127,7 +127,7 @@ def index():
         return redirect(url_for('signin'))
 
 @app.route('/v1/signin') #redirect to the idp
-#@require_api_key
+@require_api_key
 def signin():
     print(request.headers)
     authorization_url = f"{IDP_BASE_URL}/authorize?response_type=code&client_id={CLIENT_ID}&state={STATE}&scope={SCOPE}&redirect_uri={REDIRECT_URI}"

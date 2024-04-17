@@ -3,4 +3,4 @@
 set -a 
 source .env
 set +a
-python3 -m flask run
+python3 -m flask run 

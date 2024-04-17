@@ -1,3 +1,4 @@
+import flask
 from flask import Flask,redirect,url_for,session,request,jsonify,abort, make_response
 from flaskext.mysql import MySQL
 from functools import wraps
@@ -5,7 +6,13 @@ import base64
 import requests
 import base64
 import os
-import json
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import func
+from dotenv import load_dotenv
+load_dotenv()
+
+from database import *
+
 
 app = Flask(__name__)
 app.secret_key = "secret_key"
@@ -17,9 +24,11 @@ REDIRECT_URI = 'http://localhost:5000'
 SCOPE = 'openid'
 STATE = '1234567890' 
 
-mysql = MySQL()
-mysql.init_app(app)
+# mysql = MySQL()
+# mysql.init_app(app)
 
+Session = sessionmaker(bind=engine)
+session_BD = Session()
 # Database configuration
 app.config['MYSQL_DATABASE_HOST'] = 'localhost'
 app.config['MYSQL_DATABASE_PORT'] = 3308  
@@ -27,22 +36,29 @@ app.config['MYSQL_DATABASE_USER'] = 'root'
 app.config['MYSQL_DATABASE_PASSWORD'] = 'password' #change this all to environment variables
 app.config['MYSQL_DATABASE_DB'] = 'auth'
 
-def get_db_connection():
-    conn = mysql.connect()
-    return conn
+with app.app_context():
+    exists = session_BD.query(APIKEYS.apiKey).first() is not None
+    if not exists:
+        api_key = os.environ.get('API_KEY')
+        new_api_key = APIKEYS(apiKey=api_key)
+        session_BD.add(new_api_key)
+        session_BD.commit()
+    
+    session_BD.close()
+
+
+# def get_db_connection():
+#     conn = mysql.connect()
+#     return conn
 
 #API_KEY checking in the database
 def verify_api_key(api_key):
-    db_connection = get_db_connection()
-    cursor = db_connection.cursor()
-    query = "SELECT COUNT(*) FROM APIKEYS WHERE api_key = %s"
+    
+    count = session_BD.query(func.count()).filter(APIKEYS.api_key == api_key).scalar()
 
-    cursor.execute(query,(api_key,))
-    result = cursor.fetchone()
-    cursor.close()
-    db_connection.close()
+    session_BD.close()
 
-    if result[0]>0:
+    if count>0:
         return True
     else:
         return False
@@ -54,9 +70,6 @@ def require_api_key(func):
     def decorated_function(*args, **kwargs):
         print(request.headers)
         api_key = request.args.get('token')
-        if not api_key or len(api_key) % 4 != 0:
-            abort(401)
-
         #decode the api key
         api_key = api_key.encode('utf-8')
         api_key = base64.b64decode(api_key).decode('utf-8')
@@ -100,27 +113,25 @@ def index():
             headers = {'Authorization': f"{token_type} {access_token}"}
             userinfo_response = requests.get(userinfo_endpoint, headers=headers)
             userinfo = userinfo_response.json()
-            #print(userinfo.get('email'))
+            email = userinfo.get('email')
 
             # Store user information in the database
-            db_connection = get_db_connection()
-            cursor = db_connection.cursor()
-            cursor.execute("SELECT COUNT(*) FROM users WHERE email = %s", (userinfo['email'],))
-            exists = cursor.fetchone()[0]
+            
+            exists = session_BD.query(User).filter(User.email == userinfo['email']).count()
+
 
             if exists:
         # Update existing user's tokens
-                cursor.execute("UPDATE users SET access_token = %s, refresh_token = %s WHERE email = %s",
-                            (access_token, refresh_token, userinfo['email']))
+                session_BD.query(User).filter(User.email == userinfo['email']).update(
+                    {"access_token": access_token, "refresh_token": refresh_token}
+                )
             else:
         # Insert new user
-                cursor.execute("INSERT INTO users (email, access_token, refresh_token) VALUES (%s, %s, %s)",
-                            (userinfo['email'], access_token, refresh_token))
+                new_user = User(email=email, access_token=access_token, refresh_token=refresh_token)
+                session_BD.add(new_user)
 
-            db_connection.commit()
-            cursor.close()
-            db_connection.close()
-            
+            session_BD.commit()
+            session_BD.close()
             session['email'] = userinfo['email']
             session['access_token'] = access_token
 
@@ -135,8 +146,35 @@ def index():
         return redirect(url_for('signin'))
 
 @app.route('/v1/signin') #redirect to the idp
-@require_api_key
+#@require_api_key
 def signin():
+    # signin for nucleos
+    if flask.request.method == 'POST':
+        # get request body
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        # check if user exists in the database
+        user = session_BD.query(User).filter(User.email == email).first()
+        if user:
+            session['email'] = user[1]
+            session['access_token'] = user[3]
+        else:
+            # insert new user
+            nucleo = Nucleo(email=email, password=password)
+            session_BD.add(nucleo)
+            session_BD.commit()
+            session['email'] = email
+
+        session_BD.close()
+        return jsonify({
+            "message": "User signed in successfully",
+            "email": session.get('email')
+        }), 200
+    
+    # signin for users
     print(request.headers)
     authorization_url = f"{IDP_BASE_URL}/authorize?response_type=code&client_id={CLIENT_ID}&state={STATE}&scope={SCOPE}&redirect_uri={REDIRECT_URI}"
     #response = requests.get(authorization_url)
@@ -144,7 +182,7 @@ def signin():
     return redirect(authorization_url)
     
 @app.route('/v1/register')
-@require_api_key
+#@require_api_key
 def register():
     access_token = session.get('access_token')
     if access_token:
@@ -154,23 +192,17 @@ def register():
         # if not nucleo:
         #     return jsonify({"error": "Nucleo value is required"}), 400
         nucleo = 'ECT'
-        db_connection = get_db_connection()
-        cursor = db_connection.cursor()
-        cursor.execute("SELECT * FROM users WHERE access_token = %s", (access_token,))
-        user = cursor.fetchone()
+        user = session_BD.query(User).filter(User.access_token == access_token).first() 
         if user:
             session['email'] = user[1]
             session['access_token'] = user[3]
             # Update the user with the nucleo value
-            cursor.execute("UPDATE users SET nucleo = %s WHERE access_token = %s", (nucleo, access_token))
-            db_connection.commit()
-            cursor.close()
-            db_connection.close()
+            session_BD.query(User).filter(User.access_token == access_token).update({"nucleo": nucleo})
+            session_BD.commit()
             # Redirect to the check function to handle further logic
             return redirect(url_for('checkUser'))
         else:
-            cursor.close()
-            db_connection.close()
+            session_BD.close()
             session['type'] = 'register'
             return jsonify({"message": "User not found"}), 404
     else:
@@ -180,14 +212,9 @@ def register():
 @app.route('/v1/check')
 def checkUser():
     if session.get('access_token'):
-        db_connection = get_db_connection()
-        cursor = db_connection.cursor()
         #print(session.get('email'))
-        cursor.execute("SELECT Nucleo FROM users WHERE email = %s", (session.get('email'),))
-        result = cursor.fetchone()
-        cursor.close()
-        db_connection.close()
-
+        result = session_BD.query(User.nucleo).filter(User.email == session.get('email')).first()
+        session_BD.close()
         if result:
             nucleo_assigned = result[0]
             if nucleo_assigned:

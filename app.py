@@ -1,6 +1,5 @@
 import flask
 from flask import Flask,redirect,url_for,session,request,jsonify,abort, make_response
-from flaskext.mysql import MySQL
 from functools import wraps
 import base64
 import requests

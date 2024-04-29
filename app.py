@@ -19,7 +19,7 @@ IDP_BASE_URL = os.environ.get('IDP_BASE_URL')
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 FRONTEND_URL = os.environ.get('FRONTEND_BASE_URL')
-REDIRECT_URI = 'http://127.0.0.1:5000'  
+REDIRECT_URI = os.environ.get('IDP_REDIRECT_URI')
 SCOPE = 'openid'
 STATE = '1234567890' 
 

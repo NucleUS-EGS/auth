@@ -19,7 +19,7 @@ IDP_BASE_URL = os.environ.get('IDP_BASE_URL')
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 FRONTEND_URL = os.environ.get('FRONTEND_BASE_URL')
-REDIRECT_URI = 'http://localhost:5000'  
+REDIRECT_URI = 'http://127.0.0.1:5000'  
 SCOPE = 'openid'
 STATE = '1234567890' 
 
@@ -29,11 +29,11 @@ STATE = '1234567890'
 Session = sessionmaker(bind=engine)
 session_BD = Session()
 # Database configuration
-app.config['MYSQL_DATABASE_HOST'] = 'localhost'
-app.config['MYSQL_DATABASE_PORT'] = 3308  
-app.config['MYSQL_DATABASE_USER'] = 'root'
-app.config['MYSQL_DATABASE_PASSWORD'] = 'password' #change this all to environment variables
-app.config['MYSQL_DATABASE_DB'] = 'auth'
+app.config['MYSQL_DATABASE_HOST'] = os.environ.get('HOST')
+app.config['MYSQL_DATABASE_PORT'] = os.environ.get('PORT')
+app.config['MYSQL_DATABASE_USER'] = os.environ.get('USER_NAME')
+app.config['MYSQL_DATABASE_PASSWORD'] = os.environ.get('PASSWORD')
+app.config['MYSQL_DATABASE_DB'] = os.environ.get('DATABASE')
 
 with app.app_context():
     exists = session_BD.query(APIKEYS.apiKey).first() is not None

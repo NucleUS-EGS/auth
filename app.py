@@ -87,7 +87,6 @@ def require_api_key(func):
 def index():
     code = request.args.get('code')
     if code:
-        code = request.args.get('code')
         byteData = f"{CLIENT_ID}:{CLIENT_SECRET}".encode('utf-8')
         encoded = base64.b64encode(byteData).decode('utf-8')
         token_url = f"{IDP_BASE_URL}/token"
@@ -114,35 +113,34 @@ def index():
             userinfo = userinfo_response.json()
             email = userinfo.get('email')
 
-            # Store user information in the database
-            
-            exists = session_BD.query(User).filter(User.email == userinfo['email']).count()
-
-
-            if exists:
-        # Update existing user's tokens
+            user = session_BD.query(User).filter(User.email == userinfo['email']).first()
+            if user:
                 session_BD.query(User).filter(User.email == userinfo['email']).update(
                     {"access_token": access_token, "refresh_token": refresh_token}
                 )
+                user_id = user.id  # Fetch the user ID from the database
             else:
-        # Insert new user
                 new_user = User(email=email, access_token=access_token, refresh_token=refresh_token)
                 session_BD.add(new_user)
+                session_BD.commit()
+                user_id = new_user.id  # Fetch the newly created user ID
 
-            session_BD.commit()
             session_BD.close()
             session['email'] = userinfo['email']
             session['access_token'] = access_token
 
             resp = make_response(redirect(url_for('checkUser')))
             resp.set_cookie('AUTH_SERVICE_EMAIL', userinfo['email'])
+            resp.set_cookie('AUTH_SERVICE_USERNAME', userinfo['email'].split('@')[0])
             resp.set_cookie('AUTH_SERVICE_ACCESS_TOKEN', access_token)
+            resp.set_cookie('AUTH_SERVICE_ID', str(user_id))  # Set the user ID cookie
+
             return resp
         else:
-            jsonify({'error': 'Failed to obtain access token'}), 500
-            return redirect(url_for('signin'))
+            return jsonify({'error': 'Failed to obtain access token'}), 500
     else:
         return redirect(url_for('signin'))
+
 
 @app.route('/v1/signin') #redirect to the idp
 #@require_api_key

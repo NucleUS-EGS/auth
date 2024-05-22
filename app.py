@@ -230,6 +230,19 @@ def checkUser():
             # If user not found in the database, consider what you'd want to do here
             return jsonify({"message": "User not found"}), 404
 
+@app.route('/v1/nucleus')
+@require_api_key
+def checkNucelus(): #return all nucleus in the database
+    if flask.request.method == 'GET':
+        try:
+            nucleus_emails = session_BD.query(Nucleo.email).all()
+            emails = [email.split('@')[0] for (email,) in nucleus_emails]
+            return jsonify({"nucleus_emails": emails}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            session_BD.close()
+
 
 HOST = os.environ.get('APP_HOST')
 PORT = os.environ.get('APP_PORT')

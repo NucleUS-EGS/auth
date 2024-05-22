@@ -5,6 +5,8 @@ import base64
 import requests
 import base64
 import os
+
+from waitress import serve
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import func
 from dotenv import load_dotenv
@@ -229,5 +231,9 @@ def checkUser():
             return jsonify({"message": "User not found"}), 404
 
 
+HOST = os.environ.get('APP_HOST')
+PORT = os.environ.get('APP_PORT')
+
 if __name__ == '__main__':
+    # serve(app, host=HOST, port=PORT)
     app.run(debug=True)

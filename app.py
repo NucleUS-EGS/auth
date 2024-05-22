@@ -162,7 +162,7 @@ def index():
             session['email'] = userinfo['email']
             session['access_token'] = access_token
 
-            resp = make_response(redirect(url_for('checkUser')))
+            resp = make_response(redirect("/auth/"+url_for('checkUser')))
             resp.set_cookie('AUTH_SERVICE_EMAIL', userinfo['email'])
             resp.set_cookie('AUTH_SERVICE_USERNAME', userinfo['email'].split('@')[0])
             resp.set_cookie('AUTH_SERVICE_ACCESS_TOKEN', access_token)
@@ -172,7 +172,7 @@ def index():
         else:
             return jsonify({'error': 'Failed to obtain access token'}), 500
     else:
-        return redirect(url_for('signin'))
+        return redirect("/auth/"+url_for('signin'))
 
 
 @app.route('/v1/signin') #redirect to the idp
@@ -230,14 +230,14 @@ def register():
             session_BD.query(User).filter(User.access_token == access_token).update({"nucleo": nucleo})
             session_BD.commit()
             # Redirect to the check function to handle further logic
-            return redirect(url_for('checkUser'))
+            return redirect("/auth/"+url_for('checkUser'))
         else:
             session_BD.close()
             session['type'] = 'register'
             return jsonify({"message": "User not found"}), 404
     else:
         # User is not authenticated, redirect to login
-        return redirect(url_for('signin'))
+        return redirect("/auth/"+url_for('signin'))
 
 @app.route('/v1/check')
 def checkUser():
@@ -254,7 +254,7 @@ def checkUser():
                 return resp
             else:
                 # If 'nucleo' is not assigned, redirect to frontend registration page
-                resp = make_response(redirect(f"{FRONTEND_URL}/register"))
+                resp = make_response(redirect(f"{FRONTEND_URL}register"))
                 resp.set_cookie('AUTH_SERVICE_STEP', 'register')
                 return resp
         else:

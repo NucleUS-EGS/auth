@@ -83,8 +83,39 @@ def require_api_key(func):
     return decorated_function
 
 
+@app.route('/v1/idp')
+def idp():
+    access_token = request.args.get('access_token')
+    refresh_token = request.args.get('refresh_token')
+    token_type = request.args.get('token_type')
+    expires_in = request.args.get('expires_in')
+    email = request.args.get('email')
 
-# Route without authentication
+    user = session_BD.query(User).filter(User.email == email).first()
+    if user:
+        session_BD.query(User).filter(User.email == email).update(
+            {"access_token": access_token, "refresh_token": refresh_token}
+        )
+        user_id = user.id
+    else:
+        new_user = User(email=email, access_token=access_token, refresh_token=refresh_token)
+        session_BD.add(new_user)
+        session_BD.commit()
+        user_id = new_user.id
+
+    session_BD.close()
+    session['email'] = email
+    session['access_token'] = access_token
+
+    resp = make_response(redirect("/auth/"+url_for('checkUser')))
+    resp.set_cookie('AUTH_SERVICE_EMAIL', email)
+    resp.set_cookie('AUTH_SERVICE_USERNAME', email.split('@')[0])
+    resp.set_cookie('AUTH_SERVICE_ACCESS_TOKEN', access_token)
+    resp.set_cookie('AUTH_SERVICE_ID', str(user_id))  # Set the user ID cookie
+
+    return resp
+
+# R authentication
 @app.route('/') #choose the idp (only UA is available)
 def index():
     code = request.args.get('code')

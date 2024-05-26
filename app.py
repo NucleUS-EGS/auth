@@ -273,7 +273,29 @@ def checkNucelus(): #return all nucleus in the database
             return jsonify({"error": str(e)}), 500
         finally:
             session_BD.close()
+    elif flask.request.method == 'POST':
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        # check if user exists in the database
+        user = session_BD.query(User).filter(User.email == email).first()
+        if user:
+            session['email'] = user[1]
+            session['access_token'] = user[3]
+        else:
+            # insert new user
+            nucleo = Nucleo(email=email, password=password)
+            session_BD.add(nucleo)
+            session_BD.commit()
+            session['email'] = email
 
+        session_BD.close()
+        return jsonify({
+            "message": "User signed in successfully",
+            "email": session.get('email')
+        }), 200
 
 HOST = os.environ.get('APP_HOST')
 PORT = os.environ.get('APP_PORT')

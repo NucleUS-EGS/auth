@@ -5,11 +5,16 @@ import base64
 import requests
 import base64
 import os
+import logging
 
 from waitress import serve
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import func
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
 from database import *
@@ -175,28 +180,30 @@ def index():
         return redirect("/auth/"+url_for('signin'))
 
 
-@app.route('/v1/signin') #redirect to the idp
-#@require_api_key
+@app.route('/v1/signin', methods=['GET', 'POST'])  # redirect to the idp
 def signin():
-    # signin for nucleos
-    if flask.request.method == 'POST':
-        # get request body
+    if request.method == 'POST':
+        if not request.is_json:
+            return jsonify({"error": "Request content must be JSON"}), 415
+
         data = request.get_json()
         email = data.get('email')
         password = data.get('password')
+        
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
-        # check if user exists in the database
-        user = session_BD.query(User).filter(User.email == email).first()
+
+        user = session_BD.query(Nucleo).filter(Nucleo.email == email).first()
         if user:
-            session['email'] = user[1]
-            session['access_token'] = user[3]
+            session['email'] = user.email
+            logger.debug(f"User {email} has already an account")
         else:
-            # insert new user
             nucleo = Nucleo(email=email, password=password)
             session_BD.add(nucleo)
             session_BD.commit()
             session['email'] = email
+            logger.debug(f"User {email} created")
+            
 
         session_BD.close()
         return jsonify({
@@ -204,12 +211,9 @@ def signin():
             "email": session.get('email')
         }), 200
     
-    # signin for users
-    print(request.headers)
     authorization_url = f"{IDP_BASE_URL}/authorize?response_type=code&client_id={CLIENT_ID}&state={STATE}&scope={SCOPE}&redirect_uri={REDIRECT_URI}"
-    #response = requests.get(authorization_url)
-    #print(response)
     return redirect(authorization_url)
+
     
 @app.route('/v1/register')
 #@require_api_key
@@ -262,40 +266,16 @@ def checkUser():
             return jsonify({"message": "User not found"}), 404
 
 @app.route('/v1/nucleus')
-@require_api_key
 def checkNucelus(): #return all nucleus in the database
     if flask.request.method == 'GET':
         try:
             nucleus_emails = session_BD.query(Nucleo.email).all()
             emails = [email.split('@')[0] for (email,) in nucleus_emails]
-            return jsonify({"nucleus_emails": emails}), 200
+            return jsonify({"nucleus": emails}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         finally:
             session_BD.close()
-    elif flask.request.method == 'POST':
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
-        # check if user exists in the database
-        user = session_BD.query(User).filter(User.email == email).first()
-        if user:
-            session['email'] = user[1]
-            session['access_token'] = user[3]
-        else:
-            # insert new user
-            nucleo = Nucleo(email=email, password=password)
-            session_BD.add(nucleo)
-            session_BD.commit()
-            session['email'] = email
-
-        session_BD.close()
-        return jsonify({
-            "message": "User signed in successfully",
-            "email": session.get('email')
-        }), 200
 
 HOST = os.environ.get('APP_HOST')
 PORT = os.environ.get('APP_PORT')

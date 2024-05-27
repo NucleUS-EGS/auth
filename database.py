@@ -16,7 +16,8 @@ class User(Base):
     email = db.Column(db.String(255), unique=True)
     access_token = db.Column(db.String(255))
     refresh_token = db.Column(db.String(255))
-    nucleo        = db.Column(db.String(255))
+
+    nucleo = db.Column(db.Integer, db.ForeignKey('nucleos.id'))
 
     # def __init__(self) -> None:
     #     super().__init__()

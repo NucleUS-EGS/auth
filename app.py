@@ -102,6 +102,9 @@ def idp():
             {"access_token": access_token, "refresh_token": refresh_token}
         )
         user_id = user.id
+        user.access_token = access_token
+        user.refresh_token = refresh_token
+        session_BD.commit()
     else:
         new_user = User(email=email, access_token=access_token, refresh_token=refresh_token)
         session_BD.add(new_user)
@@ -195,12 +198,14 @@ def signin():
 
         user = session_BD.query(Nucleo).filter(Nucleo.email == email).first()
         if user:
+            session['id'] = user.id
             session['email'] = user.email
             logger.debug(f"User {email} has already an account")
         else:
             nucleo = Nucleo(email=email, password=password)
             session_BD.add(nucleo)
             session_BD.commit()
+            session['id'] = nucleo.id
             session['email'] = email
             logger.debug(f"User {email} created")
             
@@ -208,6 +213,7 @@ def signin():
         session_BD.close()
         return jsonify({
             "message": "User signed in successfully",
+            "id": session.get('id'),
             "email": session.get('email')
         }), 200
     
@@ -215,33 +221,39 @@ def signin():
     return redirect(authorization_url)
 
     
-@app.route('/v1/register')
+@app.route('/v1/register', methods=['POST'])
 #@require_api_key
 def register():
-    access_token = session.get('access_token')
+    data = request.get_json()
+    access_token = data.get("access_token")
     if access_token:
+        user_nucleo = data.get('nucleo')
+        if not user_nucleo:
+            return jsonify({"error": "Nucleo value is required"}), 400
 
-        #NUCLEO UPDATE , ECT DEFAULT FOR TEST MODE
-        # nucleo = request.form.get('nucleo')
-        # if not nucleo:
-        #     return jsonify({"error": "Nucleo value is required"}), 400
-        nucleo = 'ECT'
-        user = session_BD.query(User).filter(User.access_token == access_token).first() 
+        user = session_BD.query(User).filter(User.access_token == access_token).first()
         if user:
-            session['email'] = user[1]
-            session['access_token'] = user[3]
-            # Update the user with the nucleo value
-            session_BD.query(User).filter(User.access_token == access_token).update({"nucleo": nucleo})
+            session['email'] = user.email
+            session['access_token'] = user.access_token
+
+            nucleo_email = f"{user_nucleo}@aauav.pt"
+            nucleo = session_BD.query(Nucleo).filter(Nucleo.email == nucleo_email).first()
+
+            user.nucleo = nucleo.id
             session_BD.commit()
-            # Redirect to the check function to handle further logic
-            return redirect("/auth/"+url_for('checkUser'))
+
+            return jsonify({
+                "message": "User registered successfully",
+                "email": user.email,
+                "nucleo": user_nucleo,
+                "step": "loggedin"
+            }), 200
         else:
             session_BD.close()
             session['type'] = 'register'
             return jsonify({"message": "User not found"}), 404
     else:
-        # User is not authenticated, redirect to login
-        return redirect("/auth/"+url_for('signin'))
+        return redirect("auth/"+url_for('signin'))
 
 @app.route('/v1/check')
 def checkUser():
@@ -265,8 +277,35 @@ def checkUser():
             # If user not found in the database, consider what you'd want to do here
             return jsonify({"message": "User not found"}), 404
 
+
+@app.route('/v1/user', methods=['GET'])
+def getUser():      
+    token = request.args.get('access_token')
+    if token:
+        try:
+            user = session_BD.query(User).filter(User.access_token == token).first()
+            if user:
+                nucleo = session_BD.query(Nucleo).filter(Nucleo.id == user.nucleo).first()
+                if nucleo:
+                    return jsonify({
+                        "id": user.id,
+                        "email": user.email,
+                        "nucleo": nucleo.email
+                    }), 200
+                else:
+                    return jsonify({"error": "Nucleo not found"}), 404
+            else:
+                return jsonify({"error": "User not found"}), 404
+        except Exception as e:
+            app.logger.error(f"Error occurred: {e}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            session_BD.close()
+    else:
+        return jsonify({"error": "Access token not provided"}), 400
+
 @app.route('/v1/nucleus')
-def checkNucelus(): #return all nucleus in the database
+def checkNucleus(): #return all nucleus in the database
     if flask.request.method == 'GET':
         try:
             nucleus_emails = session_BD.query(Nucleo.email).all()
@@ -276,6 +315,25 @@ def checkNucelus(): #return all nucleus in the database
             return jsonify({"error": str(e)}), 500
         finally:
             session_BD.close()
+
+
+#gets users belonging to that nucleo
+@app.route('/v1/students')
+def getStudents():
+    nucleo_id = request.args.get('nucleo_id')
+   
+    try:
+        nucleo_id = int(nucleo_id)
+        users = session_BD.query(User).filter(User.nucleo == nucleo_id).all() 
+        user_list = [{"id": user.id, "email": user.email} for user in users]
+        
+        return jsonify({"users": user_list}), 200
+    
+    finally:
+        session_BD.close()
+
+
+
 
 HOST = os.environ.get('APP_HOST')
 PORT = os.environ.get('APP_PORT')
